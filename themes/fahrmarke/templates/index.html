@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fahrmarken</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="wrap header">
+    <h1>Fahrmarken</h1>
+    <div class="meta">
+      <label class="switch">
+        <input id="autorefresh" type="checkbox" />
+        <span>Auto-Refresh</span>
+      </label>
+    </div>
+  </header>
+
+  <main class="wrap boards">
+    <!-- Übertage (Offline) -->
+    <section class="board">
+      <h2>Übertage <small>(Offline)</small></h2>
+      <div class="pegboard" style="--cols:7; --rows:6;">
+        {{range .}}
+          {{if not .Online}}
+          <article class="token token-off">
+            <span class="peg-head" aria-hidden="true"></span>
+            <span class="hole" aria-hidden="true"></span>
+
+            <div class="badge">
+              <div class="mark" role="img" aria-label="Schlägel und Eisen"></div>
+              {{with (index .Attributes "MemberNO")}}
+                <div class="memberno">{{.}}</div>
+              {{end}}
+            </div>
+            <div class="label"><div class="name">{{ .Showname }}</div></div>
+          </article>
+          {{end}}
+        {{end}}
+      </div>
+    </section>
+
+    <!-- Untertage (Online) -->
+    <section class="board">
+      <h2>Untertage <small>(Online)</small></h2>
+      <div class="pegboard" style="--cols:7; --rows:6;">
+        {{range .}}
+          {{if .Online}}
+          <article class="token token-on">
+            <span class="peg-head" aria-hidden="true"></span>
+            <span class="hole" aria-hidden="true"></span>
+
+            <div class="badge">
+              <div class="mark" role="img" aria-label="Schlägel und Eisen"></div>
+              {{with (index .Attributes "MemberNO")}}
+                <div class="memberno">{{.}}</div>
+              {{end}}
+            </div>
+            <div class="label"><div class="name">{{ .Showname }}</div></div>
+          </article>
+          {{end}}
+        {{end}}
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const key = "fahrmarken-auto";
+      const box = document.getElementById("autorefresh");
+      if (sessionStorage.getItem(key) === "1") box.checked = true;
+      let t = null;
+      function arm() {
+        clearInterval(t);
+        if (box.checked) {
+          sessionStorage.setItem(key, "1");
+          t = setInterval(() => location.reload(), 15000);
+        } else {
+          sessionStorage.removeItem(key);
+        }
+      }
+      box.addEventListener("change", arm);
+      arm();
+    })();
+  </script>
+</body>
+</html>
