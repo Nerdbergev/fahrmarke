@@ -16,11 +16,15 @@ import (
 )
 
 func main() {
-	datapath := pflag.String("datapath", "./", "database path")
+	datapath := pflag.String("datapath", "./", "Path for database and themes")
 	pflag.Parse()
-
-	dbpath := filepath.Join(*datapath, "fahrmarke.db")
-	err := db.InitDB(dbpath)
+	absPath, err := filepath.Abs(*datapath)
+	log.Println("Using datapath: ", absPath)
+	if err != nil {
+		log.Fatal("Error determining absolute path:", err)
+	}
+	dbpath := filepath.Join(absPath, "fahrmarke.db")
+	err = db.InitDB(dbpath)
 	if err != nil {
 		log.Fatal("Error initializing database:", err)
 	}
@@ -64,7 +68,7 @@ func main() {
 
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	web.GetRouter(r, *datapath)
+	web.GetRouter(r, absPath)
 
 	log.Println("Starting server on port " + listenPort)
 	err = http.ListenAndServe(":"+listenPort, r)

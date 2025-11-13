@@ -85,6 +85,22 @@ func createSchema() error {
 										'Theme',
 										'fahrmarke'
 									);
+				INSERT INTO SETTINGS (
+										KEY,
+										VALUE
+									)
+									VALUES (
+										'Interface',
+										'eth0'
+									);
+				INSERT INTO SETTINGS (
+										KEY,
+										VALUE
+									)
+									VALUES (
+										'Port',
+										'7070'
+									);
 
 
 				-- Table: USER
@@ -93,7 +109,7 @@ func createSchema() error {
 										NOT NULL,
 					USERNAME TEXT        NOT NULL
 										UNIQUE,
-					SHOWNAME  TEXT        NOT NULL,
+					SHOWNAME  TEXT,
 					PASSWORD TEXT        NOT NULL,
 					ADMIN    INTEGER (1) NOT NULL
 				);
