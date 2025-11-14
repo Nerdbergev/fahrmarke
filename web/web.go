@@ -6,6 +6,7 @@ import (
 	"errors"
 	"html/template"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -340,14 +341,16 @@ func setShownameHandler(w http.ResponseWriter, r *http.Request) {
 
 const saltSize = 16
 
-func generateRandomSalt(saltSize int) string {
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
-	var salt = make([]byte, saltSize)
-	_, err := rand.Read(salt[:])
-	if err != nil {
-		panic(err)
+func generateRandomSalt(n int) string {
+
+	b := make([]rune, n)
+	for i := range b {
+		a, _ := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		b[i] = letters[a.Int64()]
 	}
-	return string(salt)
+	return string(b)
 }
 
 func addDeviceHandler(w http.ResponseWriter, r *http.Request) {
