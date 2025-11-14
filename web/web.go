@@ -1,6 +1,7 @@
 package web
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"html/template"
@@ -56,50 +57,53 @@ type User struct {
 	Online     bool              `json:"online"`
 }
 
-func (u *User) LoadDetails() error {
-	devs, err := db.GetUserDevices(u.ID)
-	if err != nil {
-		return errors.New("Failed to get user devices: " + err.Error())
+func (u *User) LoadDetails(devices, attributes bool) error {
+	if devices {
+		devs, err := db.GetUserDevices(u.ID)
+		if err != nil {
+			return errors.New("Failed to get user devices: " + err.Error())
+		}
+		u.Devices = devs
 	}
-	u.Devices = devs
-	attrs, err := db.GetUserAttributes(u.ID)
-	if err != nil {
-		return errors.New("Failed to get user attributes: " + err.Error())
+	if attributes {
+		attrs, err := db.GetUserAttributes(u.ID)
+		if err != nil {
+			return errors.New("Failed to get user attributes: " + err.Error())
+		}
+		u.Attributes = attrs
 	}
-	u.Attributes = attrs
 	return nil
 }
 
-func getUsers() ([]User, error) {
+func dbUserToUser(dbUser db.User) User {
+	return User{
+		ID:       dbUser.ID,
+		Username: dbUser.Username,
+		Showname: dbUser.GetShowname(),
+	}
+}
+
+func getUsers(devices, attributes bool) ([]User, error) {
 	usersdb, err := db.GetUsers()
 	if err != nil {
 		return nil, errors.New("Failed to get users from DB: " + err.Error())
 	}
 	var users []User
 	for _, u := range usersdb {
-		user := User{
-			ID:       u.ID,
-			Username: u.Username,
-			Showname: u.GetShowname(),
-		}
-
-		if err := user.LoadDetails(); err != nil {
+		user := dbUserToUser(u)
+		if err := user.LoadDetails(devices, attributes); err != nil {
 			return nil, errors.New("Failed to load user details: " + err.Error())
 		}
-		user.Online = false
-		for _, dev := range user.Devices {
-			if arplib.CheckMACisOnline(dev.MACAddress) {
-				user.Online = true
-				break
-			}
-		}
+		user.Online = arplib.CheckUserIsPresent(u.ID)
 		users = append(users, user)
 	}
 	return users, nil
 }
 
 func getUsersHandler(w http.ResponseWriter, r *http.Request) {
-	users, err := getUsers()
+	getDevices := false
+	getAttributes := true
+	users, err := getUsers(getDevices, getAttributes)
 	if err != nil {
 		apierror(w, r, "Failed to get users: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -294,30 +298,21 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := uidVal.(int)
 
-	user, err := db.GetUserByID(userID)
+	u, err := db.GetUserByID(userID)
 	if err != nil {
 		webError(w, "Failed to get user: "+err.Error(), "", http.StatusInternalServerError)
 		return
 	}
-
-	attrs, err := db.GetUserAttributes(userID)
+	user := dbUserToUser(u)
+	getDevices := true
+	getAttributes := true
+	err = user.LoadDetails(getDevices, getAttributes)
 	if err != nil {
-		webError(w, "Failed to get user attributes: "+err.Error(), "", http.StatusInternalServerError)
-		return
-	}
-	devs, err := db.GetUserDevices(userID)
-	if err != nil {
-		webError(w, "Failed to get user devices: "+err.Error(), "", http.StatusInternalServerError)
+		webError(w, "Failed to load user details: "+err.Error(), "", http.StatusInternalServerError)
 		return
 	}
 
-	data := map[string]any{
-		"Showname":   user.GetShowname(),
-		"Devices":    devs,
-		"Attributes": attrs,
-	}
-
-	err = th.Tpl.ExecuteTemplate(w, "profile.html", data)
+	err = th.Tpl.ExecuteTemplate(w, "profile.html", user)
 	if err != nil {
 		webError(w, "Failed to render template: "+err.Error(), "", http.StatusInternalServerError)
 		return
@@ -343,6 +338,18 @@ func setShownameHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/me", http.StatusSeeOther)
 }
 
+const saltSize = 16
+
+func generateRandomSalt(saltSize int) string {
+
+	var salt = make([]byte, saltSize)
+	_, err := rand.Read(salt[:])
+	if err != nil {
+		panic(err)
+	}
+	return string(salt)
+}
+
 func addDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	uidVal := r.Context().Value(ctxUserID)
 	if uidVal == nil {
@@ -356,9 +363,10 @@ func addDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		webError(w, "Invalid MAC address", "", http.StatusBadRequest)
 		return
 	}
-	hashedMac := arplib.HashMAC(mac)
+	salt := generateRandomSalt(saltSize)
+	hashedMac := arplib.HashMAC(mac, salt)
 	name := strings.TrimSpace(r.FormValue("name"))
-	if err := db.AddOrUpdateDevice(userID, hashedMac, name); err != nil { // in dblib hinzufügen
+	if err := db.AddOrUpdateDevice(userID, hashedMac, name, salt); err != nil { // in dblib hinzufügen
 		webError(w, "Error adding or updating device: "+err.Error(), "", http.StatusInternalServerError)
 		return
 	}
@@ -407,7 +415,9 @@ func setAttributeHandler(w http.ResponseWriter, r *http.Request) {
 
 func webInterfaceHandler(w http.ResponseWriter, r *http.Request) {
 	th := getActiveTheme()
-	users, err := getUsers()
+	getDevices := false
+	getAttributes := true
+	users, err := getUsers(getDevices, getAttributes)
 	if err != nil {
 		webError(w, "Failed to load users: "+err.Error(), "", http.StatusInternalServerError)
 		return

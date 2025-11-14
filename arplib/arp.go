@@ -2,8 +2,8 @@ package arplib
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/netip"
@@ -11,39 +11,47 @@ import (
 	"sync"
 	"time"
 
+	db "github.com/Nerdberg/fahrmarke/dblib"
 	"github.com/mdlayher/arp"
 )
 
-var results arpResults
+const hashIterations = 1000
 
-type arpResults struct {
-	Results []string
-	mu      sync.Mutex
+type scanResults struct {
+	sync.RWMutex
+	usersOnline map[int]bool
 }
 
-func (r *arpResults) Add(mac string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.Results = append(r.Results, mac)
+var onlineMap scanResults = scanResults{
+	usersOnline: make(map[int]bool),
 }
 
-func (r *arpResults) Get() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.Results
+func (s *scanResults) Add(userID int) {
+	s.Lock()
+	defer s.Unlock()
+	s.usersOnline[userID] = true
 }
 
-func (r *arpResults) Clear() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.Results = []string{}
+func (s *scanResults) Clear() {
+	s.Lock()
+	defer s.Unlock()
+	s.usersOnline = make(map[int]bool)
 }
 
-func HashMAC(mac net.HardwareAddr) string {
-	h := sha256.New()
-	ms := mac.String()
-	h.Write([]byte(ms))
-	return fmt.Sprintf("%x", h.Sum(nil))
+func (s *scanResults) IsUserOnline(userID int) bool {
+	s.RLock()
+	defer s.RUnlock()
+	return s.usersOnline[userID]
+}
+
+func HashMAC(mac net.HardwareAddr, salt string) string {
+	hash := salt + mac.String()
+	for i := 0; i < hashIterations; i++ {
+		hasher := sha256.New()
+		hasher.Write([]byte(hash))
+		hash = hex.EncodeToString(hasher.Sum(nil))
+	}
+	return hash
 }
 
 func hostsFromCIDR(cidr string) ([]netip.Addr, error) {
@@ -74,16 +82,16 @@ func inc(ip net.IP) {
 	}
 }
 
-func Scan(interfaceName string, cidr string) ([]string, error) {
+func Scan(interfaceName string, cidr string) ([]net.HardwareAddr, error) {
 	//As ARP is not implemented on windows by mdlayher/arp, we skip scanning on windows
 	if runtime.GOOS == "windows" {
 		log.Println("Skipping ARP scan on Windows")
-		dummy := []string{}
+		dummy := []net.HardwareAddr{}
 		dummystring := []string{"de:ad:be:ef:de:ad", "ab:cd:ef:01:23:45"}
 		for _, ds := range dummystring {
 			mac, err := net.ParseMAC(ds)
 			if err == nil {
-				dummy = append(dummy, HashMAC(mac))
+				dummy = append(dummy, mac)
 			}
 		}
 		return dummy, nil
@@ -139,11 +147,7 @@ expect:
 			break expect
 		}
 	}
-	var hashedMACs []string
-	for _, mac := range found {
-		hashedMACs = append(hashedMACs, HashMAC(mac))
-	}
-	return hashedMACs, nil
+	return found, nil
 }
 
 func performMacScan(interfaceName string, cidr string) {
@@ -151,9 +155,26 @@ func performMacScan(interfaceName string, cidr string) {
 	if err != nil {
 		log.Println("Error during periodic scan:", err)
 	}
-	results.Clear()
+	devices, err := db.GetDevicesSparse()
+	if err != nil {
+		log.Println("Error retrieving devices from database:", err)
+		return
+	}
+	var onlineUserIDs []int
 	for _, mac := range macs {
-		results.Add(mac)
+		for i, device := range devices {
+			hashedMac := HashMAC(mac, device.Salt)
+			if hashedMac == device.MACAddress {
+				onlineUserIDs = append(onlineUserIDs, device.UserID)
+				// Remove matched device to speed up further lookups
+				devices = append(devices[:i], devices[i+1:]...)
+				break
+			}
+		}
+	}
+	onlineMap.Clear()
+	for _, uid := range onlineUserIDs {
+		onlineMap.Add(uid)
 	}
 }
 
@@ -170,16 +191,6 @@ func StartScanTicker(interfaceName string, cidr string, scanInterval time.Durati
 	}()
 }
 
-func GetScanResults() []string {
-	return results.Get()
-}
-
-func CheckMACisOnline(mac string) bool {
-	macs := results.Get()
-	for _, m := range macs {
-		if m == mac {
-			return true
-		}
-	}
-	return false
+func CheckUserIsPresent(UserID int) bool {
+	return onlineMap.IsUserOnline(UserID)
 }

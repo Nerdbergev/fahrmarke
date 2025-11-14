@@ -171,10 +171,17 @@ func createSchema() error {
 				CREATE TABLE DEVICES (
 					MACADDRESS TEXT (64) PRIMARY KEY
 										NOT NULL,
+					SALT       TEXT (16) NOT NULL,
 					DEVICENAME,
 					USER_ID              REFERENCES USERS (ID) ON DELETE CASCADE
 															ON UPDATE CASCADE
 										NOT NULL
+				);
+
+
+				-- Index: sqlite_autoindex_DEVICES_1
+				CREATE UNIQUE INDEX sqlite_autoindex_DEVICES_1 ON DEVICES (
+					MACADDRESS COLLATE BINARY
 				);
 
 
@@ -316,9 +323,11 @@ func SetUserAttribute(userid int, name string, value string) error {
 }
 
 type Device struct {
+	UserID       int            `db:"USER_ID" json:"-"`
 	MACAddress   string         `db:"MACADDRESS" json:"macaddress"`
 	DeviceNameDB sql.NullString `db:"DEVICENAME" json:"-"`
 	DeviceName   string         `json:"devicename"`
+	Salt         string         `db:"SALT" json:"-"`
 }
 
 func GetUserDevices(userid int) ([]Device, error) {
@@ -335,12 +344,21 @@ func GetUserDevices(userid int) ([]Device, error) {
 	return devices, nil
 }
 
-func AddOrUpdateDevice(userid int, macaddress string, devicename string) error {
+func GetDevicesSparse() ([]Device, error) {
+	var devices []Device
+	err := db.Select(&devices, "SELECT USER_ID, MACAddress, SALT FROM DEVICES")
+	if err != nil {
+		return nil, errors.New("Failed to get devices: " + err.Error())
+	}
+	return devices, nil
+}
+
+func AddOrUpdateDevice(userid int, macaddress string, devicename string, salt string) error {
 	var deviceID int
 	err := db.Get(&deviceID, "SELECT ID FROM DEVICES WHERE MACADDRESS = ? AND USER_ID = ?", macaddress, userid)
 	if err != nil {
 		// Device does not exist, insert new
-		_, err = db.Exec("INSERT INTO DEVICES (USER_ID, MACADDRESS, DEVICENAME) VALUES (?, ?, ?)", userid, macaddress, devicename)
+		_, err = db.Exec("INSERT INTO DEVICES (USER_ID, MACADDRESS, DEVICENAME, SALT) VALUES (?, ?, ?, ?)", userid, macaddress, devicename, salt)
 		if err != nil {
 			return errors.New("Failed to add device: " + err.Error())
 		}
