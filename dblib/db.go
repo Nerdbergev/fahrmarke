@@ -184,12 +184,6 @@ func createSchema() error {
 					MACADDRESS COLLATE BINARY
 				);
 
-
-				-- Index: sqlite_autoindex_DEVICES_1
-				CREATE UNIQUE INDEX sqlite_autoindex_DEVICES_1 ON DEVICES (
-					MACADDRESS COLLATE BINARY
-				);
-
 				COMMIT TRANSACTION;
 				PRAGMA foreign_keys = on;
 	`
