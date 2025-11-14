@@ -1,0 +1,154 @@
+name: Build and Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Get dependencies
+      run: go mod download
+
+    - name: Build
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        mkdir -p dist
+        if [ "${{ matrix.goos }}" = "windows" ]; then
+          go build -v -o dist/fahrmarke.exe ./cmd/fahrmarke
+        else
+          go build -v -o dist/fahrmarke ./cmd/fahrmarke
+        fi
+
+    - name: Copy themes folder
+      run: cp -r themes dist/
+
+    - name: Create zip archive
+      run: |
+        cd dist
+        if [ "${{ matrix.goos }}" = "windows" ]; then
+          zip -r ../fahrmarke-${{ matrix.goos }}-${{ matrix.goarch }}.zip .
+        else
+          zip -r ../fahrmarke-${{ matrix.goos }}-${{ matrix.goarch }}.zip .
+        fi
+        cd ..
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: fahrmarke-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: fahrmarke-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+        retention-days: 30
+
+  build-deb:
+    name: Build Debian Package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Get dependencies
+      run: go mod download
+
+    - name: Build binary
+      env:
+        GOOS: linux
+        GOARCH: ${{ matrix.arch }}
+      run: |
+        go build -v -o fahrmarke ./cmd/fahrmarke
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "release" ]; then
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+        else
+          VERSION="0.0.0-dev"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Create Debian package structure
+      run: |
+        VERSION=${{ steps.get_version.outputs.version }}
+        ARCH=${{ matrix.arch }}
+        PKG_NAME="fahrmarke_${VERSION}_${ARCH}"
+        
+        mkdir -p ${PKG_NAME}/DEBIAN
+        mkdir -p ${PKG_NAME}/usr/bin
+        mkdir -p ${PKG_NAME}/var/lib/fahrmarke
+        mkdir -p ${PKG_NAME}/lib/systemd/system
+        
+        # Copy binary
+        cp fahrmarke ${PKG_NAME}/usr/bin/
+        chmod 755 ${PKG_NAME}/usr/bin/fahrmarke
+        
+        # Copy themes to data directory
+        cp -r themes ${PKG_NAME}/var/lib/fahrmarke/
+        
+        # Create control file
+        sed "s/VERSION_PLACEHOLDER/${VERSION}/g; s/ARCH_PLACEHOLDER/${ARCH}/g" debian/control > ${PKG_NAME}/DEBIAN/control
+        
+        # Copy postinst script
+        cp debian/postinst ${PKG_NAME}/DEBIAN/
+        chmod 755 ${PKG_NAME}/DEBIAN/postinst
+        
+        # Copy systemd service
+        cp debian/fahrmarke.service ${PKG_NAME}/lib/systemd/system/
+        
+        # Build package
+        dpkg-deb --build ${PKG_NAME}
+
+    - name: Upload Debian package
+      uses: actions/upload-artifact@v4
+      with:
+        name: fahrmarke-debian-${{ matrix.arch }}
+        path: fahrmarke_*.deb
+        retention-days: 30
+
+  release:
+    name: Upload Release Assets
+    needs: [build, build-deb]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/**/*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

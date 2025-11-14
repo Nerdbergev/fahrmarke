@@ -1,0 +1,14 @@
+[Unit]
+Description=Fahrmarke Network Presence Tracking
+After=network.target
+
+[Service]
+Type=simple
+User=fahrmarke
+WorkingDirectory=/var/lib/fahrmarke
+ExecStart=/usr/bin/fahrmarke --datapath /var/lib/fahrmarke
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    # Create fahrmarke user if it doesn't exist
+    if ! getent passwd fahrmarke > /dev/null; then
+        useradd --system --home /var/lib/fahrmarke --shell /usr/sbin/nologin fahrmarke
+    fi
+    
+    # Create directories
+    mkdir -p /var/lib/fahrmarke
+    chown fahrmarke:fahrmarke /var/lib/fahrmarke
+    chmod 755 /var/lib/fahrmarke
+fi
+
+#DEBHELPER#
+
+exit 0

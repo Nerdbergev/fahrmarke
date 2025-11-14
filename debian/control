@@ -1,0 +1,9 @@
+Package: fahrmarke
+Version: VERSION_PLACEHOLDER
+Section: net
+Priority: optional
+Architecture: ARCH_PLACEHOLDER
+Maintainer: philmacfly <fahrmarke@philmacfly.eu>
+Description: Fahrmarke - Network presence tracking system
+ Fahrmarke is a system for tracking network presence via ARP scanning
+ and MAC address monitoring.
