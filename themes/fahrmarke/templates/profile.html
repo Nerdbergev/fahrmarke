@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mein Profil</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="wrap">
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+    <h1>Mein Profil</h1>
+    <form method="post" action="/logout">
+      <button class="btn">Logout</button>
+    </form>
+  </header>
+
+  <section class="card">
+    <h2>Anzeige-Name</h2>
+    <form method="post" action="/me/showname">
+      <input name="showname" value="{{.Showname}}" required>
+      <button class="btn">Speichern</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Geräte</h2>
+    <table>
+      <thead><tr><th>MAC</th><th>Name</th><th></th></tr></thead>
+      <tbody>
+        {{range .Devices}}
+        <tr>
+          <td><code>{{.MACAddress}}</code></td>
+          <td>{{if .DeviceName}}{{.DeviceName}}{{end}}</td>
+          <td>
+            <form class="inline" method="post" action="/me/devices/delete">
+              <input type="hidden" name="mac" value="{{.MACAddress}}">
+              <button class="btn">Löschen</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+
+    <h3>Gerät hinzufügen</h3>
+    <form method="post" action="/me/devices/add">
+      <input name="mac" placeholder="AA:BB:CC:DD:EE:FF" required>
+      <input name="name" placeholder="optional: Gerätename">
+      <button class="btn">Hinzufügen</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Eigene Attribute</h2>
+    <table>
+      <thead><tr><th>Schlüssel</th><th>Wert</th><th></th></tr></thead>
+      <tbody>
+        {{range $k,$v := .Attributes}}
+        <tr>
+          <form class="inline" method="post" action="/me/attributes/set">
+			<input type="hidden" name="key" value="{{$k}}">
+            <td>{{$k}}</td>
+            <td><input name="value" value="{{$v}}"></td>
+            <td><button class="btn">Speichern</button></td>
+          </form>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+
+  <p><a href="/">← Zur Übersicht</a></p>
+</body>
+</html>

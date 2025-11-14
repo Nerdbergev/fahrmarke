@@ -1,0 +1,18 @@
+<!doctype html><html lang="de"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Registrieren</title><link rel="stylesheet" href="/static/styles.css">
+</head><body class="wrap">
+<h1>Registrieren</h1>
+<form method="post">
+  <label for="gender">Geschlecht:</label>
+  <select name="gender" id="gender">
+	<option value="meddl">Meddl</option>
+	<option value="czechno">Czechno</option>
+  </select> 
+  <p><label>Nutzername<br><input name="username" required></label></p>
+  <p><label>Passwort<br><input type="password" name="password" required></label></p>
+  <p><label>Passwort bestätigen<br><input type="password" name="password2" required></label></p>
+  <p><button class="btn">Konto anlegen</button></p>
+  <p>Schon ein Konto? <a href="/login">Login</a></p>
+</form>
+</body></html>

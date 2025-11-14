@@ -14,16 +14,47 @@ body{background:var(--bg);color:var(--fg);font-size:var(--size)}
 .wrap{width:min(1100px,100%);margin:0 auto;padding:1rem}
 
 /* Header */
-.header h1{margin:0 0 .4rem;font-size:clamp(1.25rem,2.6vw,1.8rem)}
-.meta{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;color:var(--muted)}
-.inline{display:inline}
-button.btn{
-  appearance:none;border:1px solid var(--border);background:transparent;color:var(--fg);
-  padding:.45rem .8rem;border-radius:10px;cursor:pointer
+.header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:.75rem;
 }
-button.btn:hover{border-color:var(--accent)}
-.switch{display:flex;gap:.4rem;align-items:center}
-.switch input{accent-color:var(--accent)}
+
+.header h1{
+  margin:0;
+  font-size:clamp(1.25rem,2.6vw,1.8rem);
+}
+
+.meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.75rem;
+  align-items:center;
+}
+
+.header-actions{
+  display:flex;
+  gap:.5rem;
+}
+
+.btn{
+  display:inline-block;
+  appearance:none;
+  border:1px solid var(--border);
+  background:transparent;
+  color:var(--fg);
+  padding:.45rem .8rem;
+  border-radius:10px;
+  cursor:pointer;
+  text-decoration:none; /* für <a> */
+}
+
+.btn:hover{
+  border-color:var(--accent);
+}
+
 
 /* Boards layout */
 .boards{display:grid;gap:1.2rem}
@@ -124,4 +155,55 @@ button.btn:hover{border-color:var(--accent)}
 @media (prefers-reduced-motion:no-preference){
   .token{ transition: transform .15s ease-out }
   .token:hover{ transform: translateY(-2px) rotate(.5deg) }
+}
+
+/* simple forms/cards so profile/login/register look ok */
+.card{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:1rem;
+  background:color-mix(in srgb,var(--panel) 96%, var(--bg));
+  margin-bottom:1rem;
+}
+
+input, button{
+  font:inherit;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
+input[type="search"]{
+  padding:.45rem .6rem;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:transparent;
+  color:var(--fg);
+  min-width:12rem;
+}
+
+/* Checkbox nicht aufpumpen */
+input[type="checkbox"]{
+  margin:0;
+  padding:0;
+  min-width:auto;
+  width:auto;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+}
+
+th,td{
+  padding:.5rem;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+}
+
+.switch{
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem; /* Abstand zwischen Box und Text */
 }

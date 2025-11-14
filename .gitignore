@@ -30,6 +30,5 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-fahrmarke
-cmd/fahrmarke/themes
+cmd/fahrmarke/fahrmarke
 *.db

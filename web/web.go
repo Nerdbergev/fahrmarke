@@ -10,12 +10,18 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
+	"time"
 
+	csrf "filippo.io/csrf/gorilla"
 	"github.com/Nerdberg/fahrmarke/arplib"
 	db "github.com/Nerdberg/fahrmarke/dblib"
 	"github.com/go-chi/chi"
+	"golang.org/x/crypto/bcrypt"
 )
+
+const bcryptCost = 15
 
 type errorResponse struct {
 	Httpstatus   string `json:"httpstatus"`
@@ -33,6 +39,14 @@ func apierror(w http.ResponseWriter, r *http.Request, err string, httpcode int) 
 	http.Error(w, string(j), httpcode)
 }
 
+func webError(w http.ResponseWriter, err string, publicerr string, httpcode int) {
+	if publicerr == "" {
+		publicerr = err
+	}
+	log.Println(err)
+	http.Error(w, publicerr, httpcode)
+}
+
 type User struct {
 	ID         int               `json:"-"`
 	Username   string            `json:"-"`
@@ -43,9 +57,6 @@ type User struct {
 }
 
 func (u *User) LoadDetails() error {
-	if u.Showname == "" {
-		u.Showname = u.Username
-	}
 	devs, err := db.GetUserDevices(u.ID)
 	if err != nil {
 		return errors.New("Failed to get user devices: " + err.Error())
@@ -69,10 +80,9 @@ func getUsers() ([]User, error) {
 		user := User{
 			ID:       u.ID,
 			Username: u.Username,
+			Showname: u.GetShowname(),
 		}
-		if u.Showname.Valid {
-			user.Showname = u.Showname.String
-		}
+
 		if err := user.LoadDetails(); err != nil {
 			return nil, errors.New("Failed to load user details: " + err.Error())
 		}
@@ -96,7 +106,7 @@ func getUsers() ([]User, error) {
 func getUsersHandler(w http.ResponseWriter, r *http.Request) {
 	users, err := getUsers()
 	if err != nil {
-		apierror(w, r, "Failed to get users: "+err.Error(), 500)
+		apierror(w, r, "Failed to get users: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(users)
@@ -159,15 +169,255 @@ func reloadThemeFromDB(datadir string) (*Theme, error) {
 	return th, nil
 }
 
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+	th := getActiveTheme()
+	switch r.Method {
+	case http.MethodGet:
+		err := th.Tpl.ExecuteTemplate(w, "register.html", nil)
+		if err != nil {
+			webError(w, "Failed to render template: "+err.Error(), "", http.StatusInternalServerError)
+			return
+		}
+	case http.MethodPost:
+		username := strings.TrimSpace(r.FormValue("username"))
+		p1 := r.FormValue("password")
+		p2 := r.FormValue("password2")
+
+		if username == "" || p1 == "" || p1 != p2 {
+			webError(w, "Invalid input", "", http.StatusBadRequest)
+			return
+		}
+
+		// already exists?
+		if _, err := db.GetUserByUsername(username); err == nil {
+			webError(w, "User already exists", "", http.StatusConflict)
+			return
+		}
+
+		hash, err := bcrypt.GenerateFromPassword([]byte(p1), bcryptCost)
+		if err != nil {
+			webError(w, "Error generating hash: "+err.Error(), "User creation failed", http.StatusInternalServerError)
+			return
+		}
+
+		id, err := db.CreateUser(username, string(hash), 0)
+		if err != nil {
+			webError(w, "Error creating user: "+err.Error(), "User creation failed", http.StatusInternalServerError)
+			return
+		}
+
+		// Session
+		sid, s, err := newSession(id)
+		if err != nil {
+			webError(w, "Creating new Session failed:"+err.Error(), "User creation failed", http.StatusInternalServerError)
+			return
+		}
+		session.Set(sid, s)
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookieName,
+			Value:    sid,
+			Path:     "/",
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   int(24 * time.Hour / time.Second),
+			HttpOnly: true,
+		})
+
+		http.Redirect(w, r, "/me", http.StatusSeeOther)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	th := getActiveTheme()
+	switch r.Method {
+	case http.MethodGet:
+		err := th.Tpl.ExecuteTemplate(w, "login.html", nil)
+		if err != nil {
+			webError(w, "Failed to render template: "+err.Error(), "", http.StatusInternalServerError)
+			return
+		}
+	case http.MethodPost:
+		username := strings.TrimSpace(r.FormValue("username"))
+		password := r.FormValue("password")
+
+		u, err := db.GetUserByUsername(username)
+		if err != nil {
+			webError(w, "Error finding user:"+err.Error(), "Wrong username or password", http.StatusUnauthorized)
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil {
+			webError(w, "Error comparing password:"+err.Error(), "Wrong username or password", http.StatusUnauthorized)
+			return
+		}
+
+		sid, s, err := newSession(u.ID)
+		if err != nil {
+			webError(w, "Error creating session:"+err.Error(), "Wrong username or password", http.StatusInternalServerError)
+			return
+		}
+		session.Set(sid, s)
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookieName,
+			Value:    sid,
+			Path:     "/",
+			MaxAge:   int(24 * time.Hour / time.Second),
+			HttpOnly: true,
+		})
+
+		http.Redirect(w, r, "/me", http.StatusSeeOther)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	c, err := r.Cookie(sessionCookieName)
+	if err == nil {
+		destroySession(c.Value)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:   sessionCookieName,
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func profileHandler(w http.ResponseWriter, r *http.Request) {
+	th := getActiveTheme()
+	uidVal := r.Context().Value(ctxUserID)
+	if uidVal == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	userID := uidVal.(int)
+
+	user, err := db.GetUserByID(userID)
+	if err != nil {
+		webError(w, "Failed to get user: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+
+	attrs, err := db.GetUserAttributes(userID)
+	if err != nil {
+		webError(w, "Failed to get user attributes: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	devs, err := db.GetUserDevices(userID)
+	if err != nil {
+		webError(w, "Failed to get user devices: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]any{
+		"Showname":   user.GetShowname(),
+		"Devices":    devs,
+		"Attributes": attrs,
+	}
+
+	err = th.Tpl.ExecuteTemplate(w, "profile.html", data)
+	if err != nil {
+		webError(w, "Failed to render template: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+}
+
+func setShownameHandler(w http.ResponseWriter, r *http.Request) {
+	uidVal := r.Context().Value(ctxUserID)
+	if uidVal == nil {
+		webError(w, "Not logged in", "", http.StatusUnauthorized)
+		return
+	}
+	userID := uidVal.(int)
+	name := strings.TrimSpace(r.FormValue("showname"))
+	if name == "" {
+		webError(w, "Showname empty", "", http.StatusBadRequest)
+		return
+	}
+	if err := db.SetUserShowname(userID, name); err != nil {
+		webError(w, "Error setting Showname: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/me", http.StatusSeeOther)
+}
+
+func addDeviceHandler(w http.ResponseWriter, r *http.Request) {
+	uidVal := r.Context().Value(ctxUserID)
+	if uidVal == nil {
+		webError(w, "Not logged in", "", http.StatusUnauthorized)
+		return
+	}
+	userID := uidVal.(int)
+	macStr := r.FormValue("mac")
+	mac, err := net.ParseMAC(strings.TrimSpace(macStr))
+	if err != nil {
+		webError(w, "Invalid MAC address", "", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if err := db.AddOrUpdateDevice(userID, mac.String(), name); err != nil { // in dblib hinzufügen
+		webError(w, "Error adding or updating device: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/me", http.StatusSeeOther)
+}
+
+func deleteDeviceHandler(w http.ResponseWriter, r *http.Request) {
+	uidVal := r.Context().Value(ctxUserID)
+	if uidVal == nil {
+		webError(w, "Not logged in", "", http.StatusUnauthorized)
+		return
+	}
+	userID := uidVal.(int)
+	macStr := r.FormValue("mac")
+	mac, err := net.ParseMAC(strings.TrimSpace(macStr))
+	if err != nil {
+		webError(w, "Invalid MAC address", "", http.StatusBadRequest)
+		return
+	}
+	if err := db.DeleteDevice(userID, mac.String()); err != nil { // in dblib hinzufügen
+		webError(w, "Error deleting device: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/me", http.StatusSeeOther)
+}
+
+func setAttributeHandler(w http.ResponseWriter, r *http.Request) {
+	uidVal := r.Context().Value(ctxUserID)
+	if uidVal == nil {
+		webError(w, "Not logged in", "", http.StatusUnauthorized)
+		return
+	}
+	userID := uidVal.(int)
+	key := strings.TrimSpace(r.FormValue("key"))
+	val := strings.TrimSpace(r.FormValue("value"))
+	if key == "" {
+		webError(w, "Key empty", "", http.StatusBadRequest)
+		return
+	}
+	if err := db.SetUserAttribute(userID, key, val); err != nil {
+		webError(w, "Error setting attribute: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/me", http.StatusSeeOther)
+}
+
 func webInterfaceHandler(w http.ResponseWriter, r *http.Request) {
 	th := getActiveTheme()
 	users, err := getUsers()
 	if err != nil {
-		http.Error(w, "Failed to load users: "+err.Error(), 500)
+		webError(w, "Failed to load users: "+err.Error(), "", http.StatusInternalServerError)
 		return
 	}
 	if err := th.Tpl.ExecuteTemplate(w, "index.html", users); err != nil {
-		http.Error(w, err.Error(), 500)
+		webError(w, "Failed to render template: "+err.Error(), "", http.StatusInternalServerError)
 	}
 }
 
@@ -177,17 +427,61 @@ func staticHandler(w http.ResponseWriter, r *http.Request) {
 	http.StripPrefix("/static/", fs).ServeHTTP(w, r)
 }
 
-func getWebRouter(r *chi.Mux, datadir string) {
+var datadir string
+
+func getWebRouter(r *chi.Mux) {
 	_, err := reloadThemeFromDB(datadir) // initial load
 	if err != nil {
 		log.Fatal("Failed to load initial theme: ", err)
 	}
+	hmac, err := db.GetSetting("SessionHMACKey")
+	if err != nil {
+		log.Fatal("Failed to get SessionHMACKey: ", err)
+	}
+	if hmac != "" {
+		sessionHMACKey = []byte(hmac)
+	} else {
+		log.Fatal("No SessionHMACKey found. Please set in Database")
+	}
 	r.Get("/favicon.ico", staticHandler)
 	r.Get("/static/*", staticHandler)
+
+	// Auth Routen
+	r.Get("/register", registerHandler)
+	r.Post("/register", registerHandler)
+	r.Get("/login", loginHandler)
+	r.Post("/login", loginHandler)
+	r.Post("/logout", logoutHandler)
+
+	// Private Routen
+	r.Group(func(pr chi.Router) {
+		pr.Use(RequireAuth)
+		pr.Get("/me", profileHandler)
+		pr.Post("/me/showname", setShownameHandler)
+		pr.Post("/me/devices/add", addDeviceHandler)
+		pr.Post("/me/devices/delete", deleteDeviceHandler)
+		pr.Post("/me/attributes/set", setAttributeHandler)
+	})
+
 	r.Get("/", webInterfaceHandler)
 }
 
-func GetRouter(r *chi.Mux, datadir string) {
+func GetRouter(r *chi.Mux, dir string) {
+	r.Use(SessionMiddleware)
+	datadir = dir
+	csrfKeySetting, err := db.GetSetting("CSRFKey")
+	if err != nil {
+		log.Fatal("Failed to get CSRFKey: ", err)
+	}
+	if csrfKeySetting == "" {
+		log.Fatal("No CSRFKey found. Please set in Database")
+	}
+	csrfKey := []byte(csrfKeySetting)
+
+	r.Use(csrf.Protect(
+		csrfKey,
+	))
+
 	getAPIRouter(r)
-	getWebRouter(r, datadir)
+	getWebRouter(r)
 }

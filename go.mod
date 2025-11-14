@@ -1,13 +1,17 @@
 module github.com/Nerdberg/fahrmarke
 
-go 1.23.4
+go 1.24.0
+
+toolchain go1.24.10
 
 require (
+	filippo.io/csrf v0.2.1
 	github.com/go-chi/chi v1.5.5
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/spf13/pflag v1.0.10
+	golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2
 )
 
 require (
