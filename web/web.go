@@ -88,12 +88,7 @@ func getUsers() ([]User, error) {
 		}
 		user.Online = false
 		for _, dev := range user.Devices {
-			mac, err := net.ParseMAC(dev.MACAddress)
-			if err != nil {
-				log.Println("Failed to parse MAC address:", err, "for device:", dev.MACAddress)
-				continue
-			}
-			if arplib.CheckMACisOnline(mac) {
+			if arplib.CheckMACisOnline(dev.MACAddress) {
 				user.Online = true
 				break
 			}
@@ -361,8 +356,9 @@ func addDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		webError(w, "Invalid MAC address", "", http.StatusBadRequest)
 		return
 	}
+	hashedMac := arplib.HashMAC(mac)
 	name := strings.TrimSpace(r.FormValue("name"))
-	if err := db.AddOrUpdateDevice(userID, mac.String(), name); err != nil { // in dblib hinzufügen
+	if err := db.AddOrUpdateDevice(userID, hashedMac, name); err != nil { // in dblib hinzufügen
 		webError(w, "Error adding or updating device: "+err.Error(), "", http.StatusInternalServerError)
 		return
 	}

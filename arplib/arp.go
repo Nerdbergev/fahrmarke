@@ -1,7 +1,9 @@
 package arplib
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/netip"
@@ -15,17 +17,17 @@ import (
 var results arpResults
 
 type arpResults struct {
-	Results []net.HardwareAddr
+	Results []string
 	mu      sync.Mutex
 }
 
-func (r *arpResults) Add(mac net.HardwareAddr) {
+func (r *arpResults) Add(mac string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Results = append(r.Results, mac)
 }
 
-func (r *arpResults) Get() []net.HardwareAddr {
+func (r *arpResults) Get() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.Results
@@ -34,7 +36,14 @@ func (r *arpResults) Get() []net.HardwareAddr {
 func (r *arpResults) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.Results = []net.HardwareAddr{}
+	r.Results = []string{}
+}
+
+func HashMAC(mac net.HardwareAddr) string {
+	h := sha256.New()
+	ms := mac.String()
+	h.Write([]byte(ms))
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func hostsFromCIDR(cidr string) ([]netip.Addr, error) {
@@ -65,16 +74,16 @@ func inc(ip net.IP) {
 	}
 }
 
-func Scan(interfaceName string, cidr string) ([]net.HardwareAddr, error) {
+func Scan(interfaceName string, cidr string) ([]string, error) {
 	//As ARP is not implemented on windows by mdlayher/arp, we skip scanning on windows
 	if runtime.GOOS == "windows" {
 		log.Println("Skipping ARP scan on Windows")
-		dummy := []net.HardwareAddr{}
+		dummy := []string{}
 		dummystring := []string{"de:ad:be:ef:de:ad", "ab:cd:ef:01:23:45"}
 		for _, ds := range dummystring {
 			mac, err := net.ParseMAC(ds)
 			if err == nil {
-				dummy = append(dummy, mac)
+				dummy = append(dummy, HashMAC(mac))
 			}
 		}
 		return dummy, nil
@@ -130,7 +139,11 @@ expect:
 			break expect
 		}
 	}
-	return found, nil
+	var hashedMACs []string
+	for _, mac := range found {
+		hashedMACs = append(hashedMACs, HashMAC(mac))
+	}
+	return hashedMACs, nil
 }
 
 func performMacScan(interfaceName string, cidr string) {
@@ -157,14 +170,14 @@ func StartScanTicker(interfaceName string, cidr string, scanInterval time.Durati
 	}()
 }
 
-func GetScanResults() []net.HardwareAddr {
+func GetScanResults() []string {
 	return results.Get()
 }
 
-func CheckMACisOnline(mac net.HardwareAddr) bool {
+func CheckMACisOnline(mac string) bool {
 	macs := results.Get()
 	for _, m := range macs {
-		if m.String() == mac.String() {
+		if m == mac {
 			return true
 		}
 	}

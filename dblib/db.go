@@ -167,6 +167,21 @@ func createSchema() error {
 					)
 				);
 
+				-- Table: DEVICES
+				CREATE TABLE DEVICES (
+					MACADDRESS TEXT (64) PRIMARY KEY
+										NOT NULL,
+					DEVICENAME,
+					USER_ID              REFERENCES USERS (ID) ON DELETE CASCADE
+															ON UPDATE CASCADE
+										NOT NULL
+				);
+
+
+				-- Index: sqlite_autoindex_DEVICES_1
+				CREATE UNIQUE INDEX sqlite_autoindex_DEVICES_1 ON DEVICES (
+					MACADDRESS COLLATE BINARY
+				);
 
 				COMMIT TRANSACTION;
 				PRAGMA foreign_keys = on;
