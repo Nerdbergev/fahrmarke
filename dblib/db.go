@@ -19,7 +19,7 @@ func InitDB(dbpath string) error {
 	if err != nil {
 		return errors.New("Failed to open database: " + err.Error())
 	}
-	
+
 	// SQLite works best with a single connection
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
@@ -248,7 +248,7 @@ func CreateUser(username string, password string, admin int) (int, error) {
 
 func GetUsers() ([]User, error) {
 	var users []User
-	err := db.Select(&users, "SELECT ID, USERNAME, SHOWNAME FROM USERS")
+	err := db.Select(&users, "SELECT * FROM USERS")
 	if err != nil {
 		return nil, errors.New("Failed to get users: " + err.Error())
 	}
@@ -257,7 +257,7 @@ func GetUsers() ([]User, error) {
 
 func GetUserByID(userid int) (User, error) {
 	var user User
-	err := db.Get(&user, "SELECT ID, USERNAME, SHOWNAME FROM USERS WHERE ID = ?", userid)
+	err := db.Get(&user, "SELECT * FROM USERS WHERE ID = ?", userid)
 	if err != nil {
 		return User{}, errors.New("Failed to get user by ID: " + err.Error())
 	}
@@ -317,6 +317,14 @@ func SetUserAttribute(userid int, name string, value string) error {
 	_, err = db.Exec("INSERT OR REPLACE INTO USER_HAS_ATTRIBUTES (ATTRIBUTE_ID, USER_ID, VALUE) VALUES (?, ?, ?)", attributeID, userid, value)
 	if err != nil {
 		return errors.New("Failed to set user attribute: " + err.Error())
+	}
+	return nil
+}
+
+func UpdateUserPassword(userid int, newPassword string) error {
+	_, err := db.Exec("UPDATE USERS SET PASSWORD = ? WHERE ID = ?", newPassword, userid)
+	if err != nil {
+		return errors.New("Failed to update user password: " + err.Error())
 	}
 	return nil
 }

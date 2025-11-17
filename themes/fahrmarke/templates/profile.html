@@ -15,6 +15,25 @@
   </header>
 
   <section class="card">
+    <h2>Passwort ändern</h2>
+    <form method="post" action="/me/password">
+	  <label for="oldpassword">Altes Passwort:</label>
+	  <br>
+      <input type="password" name="oldpassword" placeholder="Altes Passwort" required>
+      <br>
+	  <label for="newpassword">Neues Passwort:</label>
+	  <br>
+      <input type="password" name="newpassword" placeholder="Neues Passwort" required>
+      <br>
+	  <label for="confirmpassword">Neues Passwort bestätigen:</label>
+	  <br>
+      <input type="password" name="confirmpassword" placeholder="Neues Passwort bestätigen" required>
+      <br>
+      <button class="btn">Ändern</button>
+    </form>
+  </section>
+
+  <section class="card">
     <h2>Anzeige-Name</h2>
     <form method="post" action="/me/showname">
       <input name="showname" value="{{.Showname}}" required>

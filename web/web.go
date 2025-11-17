@@ -413,6 +413,41 @@ func setAttributeHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/me", http.StatusSeeOther)
 }
 
+func changePasswordHandler(w http.ResponseWriter, r *http.Request) {
+	uidVal := r.Context().Value(ctxUserID)
+	if uidVal == nil {
+		webError(w, "Not logged in", "", http.StatusUnauthorized)
+		return
+	}
+	userID := uidVal.(int)
+	oldPassword := r.FormValue("oldpassword")
+	newPassword := r.FormValue("newpassword")
+	confirmPassword := r.FormValue("confirmpassword")
+	if newPassword != confirmPassword {
+		webError(w, "New passwords do not match", "", http.StatusBadRequest)
+		return
+	}
+	u, err := db.GetUserByID(userID)
+	if err != nil {
+		webError(w, "Failed to get user: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(oldPassword)); err != nil {
+		webError(w, "Old password incorrect", "", http.StatusUnauthorized)
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
+	if err != nil {
+		webError(w, "Error generating hash: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	if err := db.UpdateUserPassword(userID, string(hash)); err != nil {
+		webError(w, "Error updating password: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/me", http.StatusSeeOther)
+}
+
 func webInterfaceHandler(w http.ResponseWriter, r *http.Request) {
 	th := getActiveTheme()
 	getDevices := false
@@ -467,6 +502,7 @@ func getWebRouter(r *chi.Mux) {
 		pr.Post("/me/devices/add", addDeviceHandler)
 		pr.Post("/me/devices/delete", deleteDeviceHandler)
 		pr.Post("/me/attributes/set", setAttributeHandler)
+		pr.Post("/me/password", changePasswordHandler)
 	})
 
 	r.Get("/", webInterfaceHandler)
