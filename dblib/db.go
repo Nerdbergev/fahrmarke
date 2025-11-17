@@ -96,7 +96,7 @@ func createSchema() error {
 									)
 									VALUES (
 										'Interface',
-										'eth0'
+										''
 									);
 				INSERT INTO SETTINGS (
 										KEY,
@@ -183,12 +183,6 @@ func createSchema() error {
 										NOT NULL
 				);
 
-
-				-- Index: sqlite_autoindex_DEVICES_1
-				CREATE UNIQUE INDEX sqlite_autoindex_DEVICES_1 ON DEVICES (
-					MACADDRESS COLLATE BINARY
-				);
-
 				COMMIT TRANSACTION;
 				PRAGMA foreign_keys = on;
 	`
@@ -214,6 +208,14 @@ func GetSetting(key string) (string, error) {
 		return "", errors.New("Failed to get setting: " + err.Error())
 	}
 	return value, nil
+}
+
+func SetSetting(key string, value string) error {
+	_, err := db.Exec("INSERT OR REPLACE INTO SETTINGS (KEY, VALUE) VALUES (?, ?)", key, value)
+	if err != nil {
+		return errors.New("Failed to set setting: " + err.Error())
+	}
+	return nil
 }
 
 type User struct {

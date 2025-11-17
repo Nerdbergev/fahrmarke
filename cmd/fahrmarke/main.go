@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -39,11 +40,42 @@ func main() {
 	if err != nil {
 		log.Fatal("Error retrieving Interface setting:", err)
 	}
+	interfacefromdb := false
+	rangepref := ""
+	if interfacename != "" {
+		interfacefromdb = true
+	}
+	if !interfacefromdb {
+		interfaces, err := net.Interfaces()
+		if err != nil {
+			log.Fatal("Error retrieving network interfaces:", err)
+		}
+		for _, iface := range interfaces {
+			if (iface.Flags&net.FlagUp != 0) && (iface.Flags&net.FlagLoopback == 0) {
+				interfacename = iface.Name
+				log.Println("No interface set in settings, using first active non-loopback interface:", interfacename)
+				adresses, err := iface.Addrs()
+				if err != nil {
+					log.Fatal("Error retrieving interface addresses:", err)
+				}
+				rangepref = adresses[0].String()
+				_, ipNet, err := net.ParseCIDR(rangepref)
+				if err != nil {
+					log.Fatal("Error parsing CIDR:", err)
+				}
+				rangepref = ipNet.String()
+				log.Println("Using interface", interfacename, "with address", rangepref)
+				break
+			}
+		}
+	}
 	log.Println("Interface setting value:", interfacename)
 
-	rangepref, err := db.GetSetting("Range")
-	if err != nil {
-		log.Fatal("Error retrieving Range setting:", err)
+	if interfacefromdb {
+		rangepref, err = db.GetSetting("Range")
+		if err != nil {
+			log.Fatal("Error retrieving Range setting:", err)
+		}
 	}
 	log.Println("Range setting value:", rangepref)
 

@@ -97,7 +97,7 @@ func Scan(interfaceName string, cidr string) ([]net.HardwareAddr, error) {
 		return dummy, nil
 	}
 
-	timeout := 500 * time.Millisecond
+	timeout := 3 * time.Second
 
 	iface, err := net.InterfaceByName(interfaceName)
 	if err != nil {
@@ -109,6 +109,8 @@ func Scan(interfaceName string, cidr string) ([]net.HardwareAddr, error) {
 		return nil, errors.New("Failed to get hosts from CIDR: " + err.Error())
 	}
 
+	log.Printf("Starting ARP scan for %d IPs on interface %s", len(ips), interfaceName)
+
 	// open ARP client on the interface (requires elevated privileges)
 	c, err := arp.Dial(iface)
 	if err != nil {
@@ -116,58 +118,123 @@ func Scan(interfaceName string, cidr string) ([]net.HardwareAddr, error) {
 	}
 	defer c.Close()
 
-	results := make(chan net.HardwareAddr)
+	// Use buffered channel to prevent goroutines from blocking
+	results := make(chan net.HardwareAddr, len(ips))
+	var wg sync.WaitGroup
 
-	for _, ip := range ips {
-		go func(ip netip.Addr) {
-			// set deadline per request to avoid blocking forever
-			_ = c.SetReadDeadline(time.Now().Add(timeout))
-			mac, err := c.Resolve(ip)
-			if err == nil && mac != nil {
-				results <- mac
-				return
-			}
-			// if Resolve failed, optionally try sending a request manually
-			// (c.Resolve already does ARP request + wait)
-			results <- nil
-		}(ip)
-	}
+	// Process IPs in batches to avoid overwhelming the network
+	batchSize := 20
+	for i := 0; i < len(ips); i += batchSize {
+		end := i + batchSize
+		if end > len(ips) {
+			end = len(ips)
+		}
 
-	// collect responses with a simple timeout
-	deadline := time.After(time.Duration(len(ips))*(timeout) + 2*time.Second)
-	var found []net.HardwareAddr
-expect:
-	for i := 0; i < len(ips); i++ {
-		select {
-		case r := <-results:
-			if r != nil {
-				found = append(found, r)
-			}
-		case <-deadline:
-			break expect
+		for j := i; j < end; j++ {
+			ip := ips[j]
+			wg.Add(1)
+			go func(ip netip.Addr) {
+				defer wg.Done()
+
+				// Create a separate client for each goroutine to avoid deadline interference
+				localClient, err := arp.Dial(iface)
+				if err != nil {
+					log.Printf("Failed to create ARP client for %s: %v", ip, err)
+					return
+				}
+				defer localClient.Close()
+
+				// Set deadline for this specific request
+				err = localClient.SetReadDeadline(time.Now().Add(timeout))
+				if err != nil {
+					log.Printf("Failed to set read deadline for %s: %v", ip, err)
+					return
+				}
+
+				mac, err := localClient.Resolve(ip)
+				if err != nil {
+					return
+				}
+
+				if mac != nil {
+					results <- mac
+				}
+			}(ip)
+		}
+
+		// Wait a bit between batches to avoid overwhelming the network
+		if end < len(ips) {
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
+
+	// Wait for all goroutines to complete with timeout
+	done := make(chan bool)
+	go func() {
+		wg.Wait()
+		close(results)
+		done <- true
+	}()
+
+	var found []net.HardwareAddr
+	scanTimeout := time.After(timeout * 3) // Give more time for all requests
+
+	// Collect results until all goroutines are done or timeout
+	collecting := true
+	for collecting {
+		select {
+		case mac, ok := <-results:
+			if !ok {
+				// Channel closed, all goroutines done
+				collecting = false
+			} else if mac != nil {
+				found = append(found, mac)
+			}
+		case <-done:
+			// All goroutines finished
+			collecting = false
+		case <-scanTimeout:
+			collecting = false
+		}
+	}
+
+	// Drain any remaining results from the channel if it's still open
+	select {
+	case <-done:
+		// Goroutines finished, channel is closed, drain it
+		for mac := range results {
+			if mac != nil {
+				found = append(found, mac)
+			}
+		}
+	default:
+		// Timeout occurred, channel might still be open
+	}
+
+	log.Printf("ARP scan completed: found %d devices", len(found))
 	return found, nil
 }
 
 func performMacScan(interfaceName string, cidr string) {
+	log.Printf("Starting MAC scan on interface %s with CIDR %s", interfaceName, cidr)
 	macs, err := Scan(interfaceName, cidr)
 	if err != nil {
 		log.Println("Error during periodic scan:", err)
 		return
 	}
+
 	devices, err := db.GetDevicesSparse()
 	if err != nil {
 		log.Println("Error retrieving devices from database:", err)
 		return
 	}
-	
+
 	// Build a map for O(1) lookup instead of O(n) for each MAC
 	deviceMap := make(map[string]int) // hashed MAC -> user ID
 	for _, device := range devices {
 		deviceMap[device.MACAddress] = device.UserID
 	}
-	
+
 	// Track unique online user IDs
 	onlineUserSet := make(map[int]bool)
 	for _, mac := range macs {
@@ -180,22 +247,21 @@ func performMacScan(interfaceName string, cidr string) {
 			}
 		}
 	}
-	
+
 	onlineMap.Clear()
 	for uid := range onlineUserSet {
 		onlineMap.Add(uid)
 	}
+	log.Printf("Scan complete: %d users are now marked as online", len(onlineUserSet))
 }
 
 func StartScanTicker(interfaceName string, cidr string, scanInterval time.Duration) {
 	performMacScan(interfaceName, cidr)
 	ticker := time.NewTicker(scanInterval)
 	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				performMacScan(interfaceName, cidr)
-			}
+		defer ticker.Stop()
+		for range ticker.C {
+			performMacScan(interfaceName, cidr)
 		}
 	}()
 }
