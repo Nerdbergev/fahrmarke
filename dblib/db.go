@@ -19,6 +19,11 @@ func InitDB(dbpath string) error {
 	if err != nil {
 		return errors.New("Failed to open database: " + err.Error())
 	}
+	
+	// SQLite works best with a single connection
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
 
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name='SETTINGS';", nil)
 	if err != nil {
@@ -118,8 +123,8 @@ func createSchema() error {
 										''
 									);
 
-				-- Table: USER
-				CREATE TABLE USER (
+				-- Table: USERS
+				CREATE TABLE USERS (
 					ID       INTEGER     PRIMARY KEY AUTOINCREMENT
 										NOT NULL,
 					USERNAME TEXT        NOT NULL
@@ -129,7 +134,7 @@ func createSchema() error {
 					ADMIN    INTEGER (1) NOT NULL DEFAULT (0) 
 				);
 
-				INSERT INTO USER (
+				INSERT INTO USERS (
 									ID,
 									USERNAME,
 									PASSWORD,

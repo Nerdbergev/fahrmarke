@@ -154,26 +154,35 @@ func performMacScan(interfaceName string, cidr string) {
 	macs, err := Scan(interfaceName, cidr)
 	if err != nil {
 		log.Println("Error during periodic scan:", err)
+		return
 	}
 	devices, err := db.GetDevicesSparse()
 	if err != nil {
 		log.Println("Error retrieving devices from database:", err)
 		return
 	}
-	var onlineUserIDs []int
+	
+	// Build a map for O(1) lookup instead of O(n) for each MAC
+	deviceMap := make(map[string]int) // hashed MAC -> user ID
+	for _, device := range devices {
+		deviceMap[device.MACAddress] = device.UserID
+	}
+	
+	// Track unique online user IDs
+	onlineUserSet := make(map[int]bool)
 	for _, mac := range macs {
-		for i, device := range devices {
+		// Check each device's salt to see if it matches
+		for _, device := range devices {
 			hashedMac := HashMAC(mac, device.Salt)
-			if hashedMac == device.MACAddress {
-				onlineUserIDs = append(onlineUserIDs, device.UserID)
-				// Remove matched device to speed up further lookups
-				devices = append(devices[:i], devices[i+1:]...)
-				break
+			if userID, found := deviceMap[hashedMac]; found {
+				onlineUserSet[userID] = true
+				break // Found a match, no need to check other devices for this MAC
 			}
 		}
 	}
+	
 	onlineMap.Clear()
-	for _, uid := range onlineUserIDs {
+	for uid := range onlineUserSet {
 		onlineMap.Add(uid)
 	}
 }

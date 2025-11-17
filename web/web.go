@@ -369,7 +369,7 @@ func addDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	salt := generateRandomSalt(saltSize)
 	hashedMac := arplib.HashMAC(mac, salt)
 	name := strings.TrimSpace(r.FormValue("name"))
-	if err := db.AddOrUpdateDevice(userID, hashedMac, name, salt); err != nil { // in dblib hinzufügen
+	if err := db.AddOrUpdateDevice(userID, hashedMac, name, salt); err != nil {
 		webError(w, "Error adding or updating device: "+err.Error(), "", http.StatusInternalServerError)
 		return
 	}
@@ -384,12 +384,9 @@ func deleteDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := uidVal.(int)
 	macStr := r.FormValue("mac")
-	mac, err := net.ParseMAC(strings.TrimSpace(macStr))
-	if err != nil {
-		webError(w, "Invalid MAC address", "", http.StatusBadRequest)
-		return
-	}
-	if err := db.DeleteDevice(userID, mac.String()); err != nil { // in dblib hinzufügen
+	// Note: macStr here is the already-hashed MAC address from the form
+	// We can delete directly by the hashed value
+	if err := db.DeleteDevice(userID, macStr); err != nil {
 		webError(w, "Error deleting device: "+err.Error(), "", http.StatusInternalServerError)
 		return
 	}
@@ -455,14 +452,14 @@ func getWebRouter(r *chi.Mux) {
 	r.Get("/favicon.ico", staticHandler)
 	r.Get("/static/*", staticHandler)
 
-	// Auth Routen
+	// Authentication routes
 	r.Get("/register", registerHandler)
 	r.Post("/register", registerHandler)
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
 	r.Post("/logout", logoutHandler)
 
-	// Private Routen
+	// Private routes
 	r.Group(func(pr chi.Router) {
 		pr.Use(RequireAuth)
 		pr.Get("/me", profileHandler)

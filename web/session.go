@@ -71,6 +71,28 @@ var session = sessionStore{
 	sessions: make(map[string]sessionData),
 }
 
+func init() {
+	// Start session cleanup goroutine
+	go func() {
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleanupExpiredSessions()
+		}
+	}()
+}
+
+func cleanupExpiredSessions() {
+	session.Lock()
+	defer session.Unlock()
+	now := time.Now()
+	for sid, sess := range session.sessions {
+		if now.After(sess.Exp) {
+			delete(session.sessions, sid)
+		}
+	}
+}
+
 const sessionCookieName = "sid"
 
 func newSession(userID int) (string, sessionData, error) {
@@ -109,7 +131,7 @@ func destroySession(sid string) {
 	session.Delete(sid)
 }
 
-// Middleware: Session einlesen
+// Middleware: Read session
 type ctxKey string
 
 const ctxUserID ctxKey = "uid"
@@ -127,7 +149,7 @@ func SessionMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Middleware: Login Pflicht
+// Middleware: Require authentication
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Context().Value(ctxUserID) == nil {
