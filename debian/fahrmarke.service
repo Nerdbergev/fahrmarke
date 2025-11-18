@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=fahrmarke
+User=root
 WorkingDirectory=/var/lib/fahrmarke
 ExecStart=/usr/bin/fahrmarke --datapath /var/lib/fahrmarke
 Restart=on-failure
