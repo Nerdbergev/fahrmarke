@@ -773,7 +773,7 @@ func getWebRouter(r *chi.Mux) {
 
 	r.Get("/favicon.ico", staticHandler)
 	r.Get("/static/*", staticHandler)
-
+	r.Get("/register", registerHandler)
 	r.Post("/register", registerHandler)
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
