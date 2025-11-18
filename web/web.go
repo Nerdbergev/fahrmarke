@@ -770,19 +770,10 @@ func getWebRouter(r *chi.Mux) {
 	if err != nil {
 		log.Fatal("Failed to load initial theme: ", err)
 	}
-	hmac, err := db.GetSetting("SessionHMACKey")
-	if err != nil {
-		log.Fatal("Failed to get SessionHMACKey: ", err)
-	}
-	if hmac != "" {
-		sessionHMACKey = []byte(hmac)
-	} else {
-		log.Fatal("No SessionHMACKey found. Please set in Database")
-	}
+
 	r.Get("/favicon.ico", staticHandler)
 	r.Get("/static/*", staticHandler)
 
-	// Aut		pr.Use(RequireAuth(false))r.Get("/register", registerHandler)
 	r.Post("/register", registerHandler)
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
@@ -818,17 +809,35 @@ func getWebRouter(r *chi.Mux) {
 	r.Get("/", webInterfaceHandler)
 }
 
+func GetKeyFromSetting(key string) ([]byte, error) {
+	keySetting, err := db.GetSetting(key)
+	if err != nil {
+		return nil, errors.New("Failed to get " + key + ": " + err.Error())
+	}
+	if keySetting == "" {
+		log.Println("No " + key + " found. Generating a new one.")
+		var keyLength int = 32
+		keySetting = generateRandomSalt(keyLength)
+		err := db.SetSetting(key, keySetting)
+		if err != nil {
+			return nil, errors.New("Failed to set " + key + ": " + err.Error())
+		}
+		log.Println("Generated and saved new " + key + ".")
+	}
+	return []byte(keySetting), nil
+}
+
 func GetRouter(r *chi.Mux, dir string) {
 	r.Use(SessionMiddleware)
 	datadir = dir
-	csrfKeySetting, err := db.GetSetting("CSRFKey")
+	csrfKey, err := GetKeyFromSetting("CSRFKey")
 	if err != nil {
-		log.Fatal("Failed to get CSRFKey: ", err)
+		log.Fatal("Failed to get CSRF key: ", err)
 	}
-	if csrfKeySetting == "" {
-		log.Fatal("No CSRFKey found. Please set in Database")
+	sessionHMACKey, err = GetKeyFromSetting("SessionHMAC")
+	if err != nil {
+		log.Fatal("Failed to get Session HMAC key: ", err)
 	}
-	csrfKey := []byte(csrfKeySetting)
 
 	r.Use(csrf.Protect(
 		csrfKey,
