@@ -123,6 +123,15 @@ func createSchema() error {
 										''
 									);
 
+				InSERT INTO SETTINGS (
+										KEY,
+										VALUE
+									)
+									VALUES (
+										'UseHTTPs',
+										'true'
+									);
+
 				-- Table: USERS
 				CREATE TABLE USERS (
 					ID       INTEGER     PRIMARY KEY AUTOINCREMENT

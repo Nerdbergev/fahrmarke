@@ -6,46 +6,16 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Nerdberg/fahrmarke/arplib"
 	db "github.com/Nerdberg/fahrmarke/dblib"
+	version "github.com/Nerdberg/fahrmarke/versionlib"
 	"github.com/Nerdberg/fahrmarke/web"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/spf13/pflag"
 )
-
-func compareVersions(v1, v2 string) int {
-	v1 = strings.Replace(v1, ".", "", -1)
-	v2 = strings.Replace(v2, ".", "", -1)
-	versions1, err := strconv.Atoi(v1)
-	if err != nil {
-		return 0
-	}
-	versions2, err := strconv.Atoi(v2)
-	if err != nil {
-		return 0
-	}
-	if versions1 < versions2 {
-		return -1
-	} else if versions1 > versions2 {
-		return 1
-	}
-	return 0
-}
-
-func updateVersion() {
-	version, err := db.GetSetting("Version")
-	if err != nil {
-		log.Fatal("Error retrieving Version setting:", err)
-	}
-	if compareVersions(version, "1.2.0") == -1 {
-		// No changes needed for this update yet
-		db.SetSetting("Version", "1.2.0")
-	}
-}
 
 func main() {
 	datapath := pflag.String("datapath", "./", "Path for database and themes")
@@ -60,6 +30,8 @@ func main() {
 	if err != nil {
 		log.Fatal("Error initializing database:", err)
 	}
+
+	version.UpdateVersion()
 
 	scantime, err := db.GetSetting("Scantime")
 	if err != nil {
@@ -121,8 +93,6 @@ func main() {
 		log.Fatal("Error retrieving Port setting:", err)
 	}
 	log.Println("Port setting value:", listenPort)
-
-	updateVersion()
 
 	r := chi.NewRouter()
 
