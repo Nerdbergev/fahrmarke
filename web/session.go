@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	db "github.com/Nerdberg/fahrmarke/dblib"
 )
 
 var sessionHMACKey = []byte("")
@@ -150,12 +152,22 @@ func SessionMiddleware(next http.Handler) http.Handler {
 }
 
 // Middleware: Require authentication
-func RequireAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Context().Value(ctxUserID) == nil {
-			http.Redirect(w, r, "/login?next="+r.URL.Path, http.StatusSeeOther)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+func RequireAuth(needAdmin bool) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Context().Value(ctxUserID) == nil {
+				http.Redirect(w, r, "/login?next="+r.URL.Path, http.StatusSeeOther)
+				return
+			}
+			if needAdmin {
+				uid := r.Context().Value(ctxUserID).(int)
+				u, err := db.GetUserByID(uid)
+				if err != nil || !u.IsAdmin() {
+					http.Error(w, "Forbidden", http.StatusForbidden)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="wrap">
+
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+    <h1>Admin-Bereich</h1>
+    <nav style="display:flex;gap:.5rem;flex-wrap:wrap;">
+      <a href="/" class="btn">← Zur Übersicht</a>
+      <a href="/me" class="btn">Mein Profil</a>
+    </nav>
+  </header>
+
+  <!-- THEME-VERWALTUNG -->
+  <section class="card">
+    <h2>Theme</h2>
+    <p>Aktuelles Theme: <strong>{{.SelectedTheme}}</strong></p>
+
+    <form method="post" action="/admin/theme" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.5rem;">
+      <label>
+        Theme wählen<br>
+        <select name="theme" style="min-width:12rem;padding:.35rem;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--fg);">
+          {{range .Themes}}
+          <option value="{{.}}" {{if eq . $.SelectedTheme}}selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+      </label>
+      <button class="btn" style="align-self:flex-end;">Theme setzen</button>
+    </form>
+
+    <form method="post" action="/admin/theme/reload">
+      <button class="btn">Theme neu laden</button>
+    </form>
+  </section>
+
+  <!-- USER-VERWALTUNG -->
+  <section class="card">
+    <h2>Benutzer</h2>
+
+    <h3>Benutzer anlegen</h3>
+    <form method="post" action="/admin/user/create" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:1rem;">
+      <label>
+        Nutzername<br>
+        <input name="username" required>
+      </label>
+      <label>
+        Passwort<br>
+        <input type="password" name="password" required>
+      </label>
+      <label style="display:flex;align-items:center;gap:.35rem;">
+        <input type="checkbox" name="admin">
+        <span>Admin</span>
+      </label>
+      <button class="btn">Benutzer erstellen</button>
+    </form>
+
+    <h3>Bestehende Benutzer</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Benutzername</th>
+          <th>Anzeige-Name</th>
+          <th>Online?</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Users}}
+        <tr>
+          <td>{{.ID}}</td>
+          <td>{{.Username}}</td>
+          <td>{{.Showname}}</td>
+          <td>{{if .Online}}✅{{else}}❌{{end}}</td>
+          <td style="display:flex;flex-wrap:wrap;gap:.25rem;">
+            <!-- Admin-Status setzen/entfernen -->
+            <form method="post" action="/admin/user/admin" class="inline">
+              
+              <input type="hidden" name="userid" value="{{.ID}}">
+              <!-- Zwei Buttons: Admin setzen / Admin entfernen -->
+              <button class="btn" name="admin" value="on" title="Als Admin markieren">Admin</button>
+            </form>
+            <form method="post" action="/admin/user/admin" class="inline">
+              
+              <input type="hidden" name="userid" value="{{.ID}}">
+              <!-- hier OHNE admin=on → wird im Handler als false interpretiert -->
+              <button class="btn" title="Admin-Rechte entfernen">kein Admin</button>
+            </form>
+
+            <!-- Passwort ändern -->
+            <form method="post" action="/admin/user/password" class="inline" style="display:flex;gap:.25rem;">
+              
+              <input type="hidden" name="userid" value="{{.ID}}">
+              <input type="password" name="newpassword" placeholder="Neues Passwort" required style="min-width:10rem;">
+              <button class="btn">Passwort ändern</button>
+            </form>
+
+            <!-- Benutzer löschen -->
+            <form method="post" action="/admin/user/delete" class="inline">
+              
+              <input type="hidden" name="userid" value="{{.ID}}">
+              <button class="btn" style="border-color:#ef4444;">Löschen</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ATTRIBUTE-VERWALTUNG -->
+  <section class="card">
+    <h2>Attribute</h2>
+
+    <h3>Bekannte Attribute</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th></th></tr></thead>
+      <tbody>
+        {{range $i,$attr := .Attributes}}
+        <tr>
+          <form class="inline" method="post" action="/me/attributes/set">
+			<input type="hidden" name="key" value="{{$attr.ID}}">
+            <td>{{$attr.ID}}</td>
+            <td><input name="value" value="{{$attr.Name}}"></td>
+            <td><button class="btn">Speichern</button></td>
+			<td><button class="btn" formaction="/admin/attribute/delete" style="border-color:#ef4444;">Löschen</button></td>
+          </form>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+
+    <h3>Attribut anlegen</h3>
+    <form method="post" action="/admin/attribute/create" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:1rem;">
+      <label>
+        Name<br>
+        <input name="AttributeName" required>
+      </label>
+      <button class="btn">Attribut erstellen</button>
+    </form>
+  </section>
+
+  <!-- SETTINGS-VERWALTUNG -->
+  <section class="card">
+    <h2>Einstellungen</h2>
+
+    <h3>Bestehende Einstellungen</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Wert</th>
+          <th>Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $k, $v := .Settings}}
+        <tr>
+          <form method="post" action="/admin/setting/set">
+            <td>
+              <input name="SettingKey" value="{{$k}}" readonly>
+            </td>
+            <td>
+              <input name="SettingValue" value="{{$v}}">
+            </td>
+            <td>
+              <button class="btn">Speichern</button>
+            </td>
+          </form>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+
+</body>
+</html>

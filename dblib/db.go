@@ -218,12 +218,35 @@ func SetSetting(key string, value string) error {
 	return nil
 }
 
+func GetAllSettings() (map[string]string, error) {
+	settings := make(map[string]string)
+	rows, err := db.Query("SELECT KEY, VALUE FROM SETTINGS", nil)
+	if err != nil {
+		return settings, errors.New("Failed to get all settings: " + err.Error())
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return settings, errors.New("Failed to scan settings: " + err.Error())
+		}
+		settings[key] = value
+	}
+
+	return settings, nil
+}
+
 type User struct {
 	ID       int            `db:"ID" json:"id"`
 	Username string         `db:"USERNAME" json:"username"`
 	Showname sql.NullString `db:"SHOWNAME" json:"showname"`
 	Password string         `db:"PASSWORD" json:"-"`
 	Admin    int            `db:"ADMIN" json:"-"`
+}
+
+func (u *User) IsAdmin() bool {
+	return u.Admin != 0
 }
 
 func (u *User) GetShowname() string {
@@ -331,6 +354,26 @@ func UpdateUserPassword(userid int, newPassword string) error {
 	return nil
 }
 
+func DeleteUser(userid int) error {
+	_, err := db.Exec("DELETE FROM USERS WHERE ID = ?", userid)
+	if err != nil {
+		return errors.New("Failed to delete user: " + err.Error())
+	}
+	return nil
+}
+
+func SetUserAdminStatus(userid int, isAdmin bool) error {
+	adminValue := 0
+	if isAdmin {
+		adminValue = 1
+	}
+	_, err := db.Exec("UPDATE USERS SET ADMIN = ? WHERE ID = ?", adminValue, userid)
+	if err != nil {
+		return errors.New("Failed to update user admin status: " + err.Error())
+	}
+	return nil
+}
+
 type Device struct {
 	UserID       int            `db:"USER_ID" json:"-"`
 	MACAddress   string         `db:"MACADDRESS" json:"macaddress"`
@@ -385,6 +428,48 @@ func DeleteDevice(userid int, macaddress string) error {
 	_, err := db.Exec("DELETE FROM DEVICES WHERE MACADDRESS = ? AND USER_ID = ?", macaddress, userid)
 	if err != nil {
 		return errors.New("Failed to delete device: " + err.Error())
+	}
+	return nil
+}
+
+type Attribute struct {
+	ID   int    `db:"ID" json:"id"`
+	Name string `db:"Name" json:"name"`
+}
+
+func GetAllAttributes() ([]Attribute, error) {
+	var result []Attribute
+	err := db.Select(&result, "SELECT * FROM USER_ATTRIBUTES")
+	if err != nil {
+		return nil, errors.New("Failed to get all attributes: " + err.Error())
+	}
+	return result, nil
+}
+
+func CreateAttribute(name string) (int, error) {
+	result, err := db.Exec("INSERT INTO USER_ATTRIBUTES (Name) VALUES (?)", name)
+	if err != nil {
+		return 0, errors.New("Failed to create attribute: " + err.Error())
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, errors.New("Failed to get last insert id: " + err.Error())
+	}
+	return int(id), nil
+}
+
+func DeleteAttribute(id int) error {
+	_, err := db.Exec("DELETE FROM USER_ATTRIBUTES WHERE ID = ?", id)
+	if err != nil {
+		return errors.New("Failed to delete attribute: " + err.Error())
+	}
+	return nil
+}
+
+func RenameAttribute(id int, newName string) error {
+	_, err := db.Exec("UPDATE USER_ATTRIBUTES SET Name = ? WHERE ID = ?", newName, id)
+	if err != nil {
+		return errors.New("Failed to rename attribute: " + err.Error())
 	}
 	return nil
 }

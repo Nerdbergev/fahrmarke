@@ -68,14 +68,17 @@ body{background:var(--bg);color:var(--fg);font-size:var(--size)}
 
 /* --- 7×6 layout (no board pegs) --- */
 .pegboard{
-  --cols:7; --rows:6;
-  --cell-h: minmax(92px, 12vw);
+  --cols:7;
+  --rows:6;
+  --cell-h: 110px;
   display:grid;
   grid-template-columns: repeat(var(--cols), 1fr);
   grid-template-rows: repeat(var(--rows), var(--cell-h));
-  place-items: center;
+  justify-items:center;
+  align-items:start;
   border-radius: 12px;
 }
+
 
 /* Tokens (hung look, without board pegs) */
 .token{

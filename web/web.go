@@ -169,6 +169,22 @@ func reloadThemeFromDB(datadir string) (*Theme, error) {
 	return th, nil
 }
 
+func getUserFromContext(r *http.Request, isAdmin bool) (User, error) {
+	uidVal := r.Context().Value(ctxUserID)
+	if uidVal == nil {
+		return User{}, errors.New("not logged in")
+	}
+	userID := uidVal.(int)
+	u, err := db.GetUserByID(userID)
+	if err != nil {
+		return User{}, errors.New("failed to get user: " + err.Error())
+	}
+	if isAdmin && !u.IsAdmin() {
+		return User{}, errors.New("user is not admin")
+	}
+	return dbUserToUser(u), nil
+}
+
 func registerHandler(w http.ResponseWriter, r *http.Request) {
 	th := getActiveTheme()
 	switch r.Method {
@@ -266,7 +282,12 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 			HttpOnly: true,
 		})
 
-		http.Redirect(w, r, "/me", http.StatusSeeOther)
+		next := r.FormValue("next")
+		if next != "" {
+			http.Redirect(w, r, next, http.StatusSeeOther)
+		} else {
+			http.Redirect(w, r, "/me", http.StatusSeeOther)
+		}
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -292,19 +313,11 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 func profileHandler(w http.ResponseWriter, r *http.Request) {
 	th := getActiveTheme()
-	uidVal := r.Context().Value(ctxUserID)
-	if uidVal == nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	userID := uidVal.(int)
-
-	u, err := db.GetUserByID(userID)
+	user, err := getUserFromContext(r, false)
 	if err != nil {
-		webError(w, "Failed to get user: "+err.Error(), "", http.StatusInternalServerError)
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
 		return
 	}
-	user := dbUserToUser(u)
 	getDevices := true
 	getAttributes := true
 	err = user.LoadDetails(getDevices, getAttributes)
@@ -448,6 +461,288 @@ func changePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/me", http.StatusSeeOther)
 }
 
+type adminInterfaceData struct {
+	Users         []User
+	Attributes    []db.Attribute
+	Settings      map[string]string
+	Themes        []string
+	SelectedTheme string
+}
+
+func getAdminInterfaceHandler(w http.ResponseWriter, r *http.Request) {
+	th := getActiveTheme()
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	getDevices := false
+	getAttributes := true
+	users, err := getUsers(getDevices, getAttributes)
+	if err != nil {
+		webError(w, "Failed to load users: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	attrs, err := db.GetAllAttributes()
+	if err != nil {
+		webError(w, "Failed to load attributes: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	settings, err := db.GetAllSettings()
+	if err != nil {
+		webError(w, "Failed to load settings: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	themeDir := filepath.Join(datadir, "themes")
+	files, err := os.ReadDir(themeDir)
+	if err != nil {
+		webError(w, "Failed to load themes: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	var themes []string
+	for _, f := range files {
+		if f.IsDir() {
+			themes = append(themes, f.Name())
+		}
+	}
+	selectedTheme := settings["Theme"]
+	delete(settings, "Theme")
+	delete(settings, "Version")
+
+	data := adminInterfaceData{
+		Users:         users,
+		Attributes:    attrs,
+		Settings:      settings,
+		Themes:        themes,
+		SelectedTheme: selectedTheme,
+	}
+	err = th.Tpl.ExecuteTemplate(w, "admin.html", data)
+	if err != nil {
+		webError(w, "Failed to render template: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+
+}
+
+func setThemeHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	themeName := r.FormValue("theme")
+	if err := db.SetSetting("Theme", themeName); err != nil {
+		webError(w, "Failed to set theme: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	_, err = reloadThemeFromDB(datadir)
+	if err != nil {
+		webError(w, "Failed to reload theme: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func reloadThemeHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	_, err = reloadThemeFromDB(datadir)
+	if err != nil {
+		webError(w, "Failed to reload theme: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func createUserHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+	if username == "" || password == "" {
+		webError(w, "Invalid input", "", http.StatusBadRequest)
+		return
+	}
+	admin := 0
+	if r.FormValue("admin") == "on" {
+		admin = 1
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	if err != nil {
+		webError(w, "Error generating password hash: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	_, err = db.CreateUser(username, string(passwordHash), admin)
+	if err != nil {
+		webError(w, "Error creating user: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func deleteUserHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	userIDStr := r.FormValue("userid")
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		webError(w, "Invalid user ID", "", http.StatusBadRequest)
+		return
+	}
+	err = db.DeleteUser(userID)
+	if err != nil {
+		webError(w, "Error deleting user: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func setUserAdminHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	userIDStr := r.FormValue("userid")
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		webError(w, "Invalid user ID", "", http.StatusBadRequest)
+		return
+	}
+	isAdmin := false
+	if r.FormValue("admin") == "on" {
+		isAdmin = true
+	}
+	err = db.SetUserAdminStatus(userID, isAdmin)
+	if err != nil {
+		webError(w, "Error setting user admin status: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func adminChangeUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	userIDStr := r.FormValue("userid")
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		webError(w, "Invalid user ID", "", http.StatusBadRequest)
+		return
+	}
+	newPassword := r.FormValue("newpassword")
+	if newPassword == "" {
+		webError(w, "New password empty", "", http.StatusBadRequest)
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
+	if err != nil {
+		webError(w, "Error generating hash: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	if err := db.UpdateUserPassword(userID, string(hash)); err != nil {
+		webError(w, "Error updating password: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func createAttributeHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	key := strings.TrimSpace(r.FormValue("AttributeName"))
+	if key == "" {
+		webError(w, "Attribute Name empty", "", http.StatusBadRequest)
+		return
+	}
+	_, err = db.CreateAttribute(key)
+	if err != nil {
+		webError(w, "Error creating attribute: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func deleteAttributeHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	ids := r.FormValue("AttributeID")
+	id, err := strconv.Atoi(ids)
+	if err != nil {
+		webError(w, "Invalid Attribute ID", "", http.StatusBadRequest)
+		return
+	}
+	err = db.DeleteAttribute(id)
+	if err != nil {
+		webError(w, "Error deleting attribute: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func renameAttributeHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	ids := r.FormValue("AttributeID")
+	id, err := strconv.Atoi(ids)
+	if err != nil {
+		webError(w, "Invalid Attribute ID", "", http.StatusBadRequest)
+		return
+	}
+	newName := strings.TrimSpace(r.FormValue("NewAttributeName"))
+	if newName == "" {
+		webError(w, "New Attribute Name empty", "", http.StatusBadRequest)
+		return
+	}
+	err = db.RenameAttribute(id, newName)
+	if err != nil {
+		webError(w, "Error renaming attribute: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func setSettingHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := getUserFromContext(r, true)
+	if err != nil {
+		webError(w, "Error while getting user from context: "+err.Error(), "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	key := strings.TrimSpace(r.FormValue("SettingKey"))
+	value := strings.TrimSpace(r.FormValue("SettingValue"))
+	if key == "" {
+		webError(w, "Setting Key empty", "", http.StatusBadRequest)
+		return
+	}
+	err = db.SetSetting(key, value)
+	if err != nil {
+		webError(w, "Error setting setting: "+err.Error(), "", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
 func webInterfaceHandler(w http.ResponseWriter, r *http.Request) {
 	th := getActiveTheme()
 	getDevices := false
@@ -475,11 +770,19 @@ func getWebRouter(r *chi.Mux) {
 	if err != nil {
 		log.Fatal("Failed to load initial theme: ", err)
 	}
+	hmac, err := db.GetSetting("SessionHMACKey")
+	if err != nil {
+		log.Fatal("Failed to get SessionHMACKey: ", err)
+	}
+	if hmac != "" {
+		sessionHMACKey = []byte(hmac)
+	} else {
+		log.Fatal("No SessionHMACKey found. Please set in Database")
+	}
 	r.Get("/favicon.ico", staticHandler)
 	r.Get("/static/*", staticHandler)
 
-	// Authentication routes
-	r.Get("/register", registerHandler)
+	// Aut		pr.Use(RequireAuth(false))r.Get("/register", registerHandler)
 	r.Post("/register", registerHandler)
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
@@ -487,7 +790,7 @@ func getWebRouter(r *chi.Mux) {
 
 	// Private routes
 	r.Group(func(pr chi.Router) {
-		pr.Use(RequireAuth)
+		pr.Use(RequireAuth(false))
 		pr.Get("/me", profileHandler)
 		pr.Post("/me/showname", setShownameHandler)
 		pr.Post("/me/devices/add", addDeviceHandler)
@@ -496,38 +799,36 @@ func getWebRouter(r *chi.Mux) {
 		pr.Post("/me/password", changePasswordHandler)
 	})
 
-	r.Get("/", webInterfaceHandler)
-}
+	// Admin routes
+	r.Group(func(pr chi.Router) {
+		pr.Use(RequireAuth(true))
+		pr.Get("/admin", getAdminInterfaceHandler)
+		pr.Post("/admin/theme", setThemeHandler)
+		pr.Post("/admin/theme/reload", reloadThemeHandler)
+		pr.Post("/admin/user/create", createUserHandler)
+		pr.Post("/admin/user/delete", deleteUserHandler)
+		pr.Post("/admin/user/admin", setUserAdminHandler)
+		pr.Post("/admin/user/password", adminChangeUserPasswordHandler)
+		pr.Post("/admin/attribute/create", createAttributeHandler)
+		pr.Post("/admin/attribute/delete", deleteAttributeHandler)
+		pr.Post("/admin/attribute/rename", renameAttributeHandler)
+		pr.Post("/admin/setting/set", setSettingHandler)
+	})
 
-func GetKeyFromSetting(key string) ([]byte, error) {
-	keySetting, err := db.GetSetting(key)
-	if err != nil {
-		return nil, errors.New("Failed to get " + key + ": " + err.Error())
-	}
-	if keySetting == "" {
-		log.Println("No " + key + " found. Generating a new one.")
-		var keyLength int = 32
-		keySetting = generateRandomSalt(keyLength)
-		err := db.SetSetting(key, keySetting)
-		if err != nil {
-			return nil, errors.New("Failed to set " + key + ": " + err.Error())
-		}
-		log.Println("Generated and saved new " + key + ".")
-	}
-	return []byte(keySetting), nil
+	r.Get("/", webInterfaceHandler)
 }
 
 func GetRouter(r *chi.Mux, dir string) {
 	r.Use(SessionMiddleware)
 	datadir = dir
-	csrfKey, err := GetKeyFromSetting("CSRFKey")
+	csrfKeySetting, err := db.GetSetting("CSRFKey")
 	if err != nil {
-		log.Fatal("Failed to get CSRF key: ", err)
+		log.Fatal("Failed to get CSRFKey: ", err)
 	}
-	sessionHMACKey, err = GetKeyFromSetting("SessionHMAC")
-	if err != nil {
-		log.Fatal("Failed to get Session HMAC key: ", err)
+	if csrfKeySetting == "" {
+		log.Fatal("No CSRFKey found. Please set in Database")
 	}
+	csrfKey := []byte(csrfKeySetting)
 
 	r.Use(csrf.Protect(
 		csrfKey,
