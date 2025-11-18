@@ -14,6 +14,7 @@ import (
 	"github.com/Nerdberg/fahrmarke/web"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/httprate"
 	"github.com/spf13/pflag"
 )
 
@@ -102,6 +103,11 @@ func main() {
 	r.Use(middleware.Recoverer)
 
 	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(httprate.Limit(
+		10,             // requests
+		10*time.Second, // per duration
+		httprate.WithKeyFuncs(httprate.KeyByIP, httprate.KeyByEndpoint),
+	))
 
 	web.GetRouter(r, absPath)
 
