@@ -35,10 +35,12 @@ func UpdateVersion() {
 		log.Fatal("Error retrieving Version setting:", err)
 	}
 	for compareVersions(localversion, CurrentVersion) == -1 {
+		log.Println("Updating software from version", localversion, "to", CurrentVersion)
 		if compareVersions(localversion, "1.3.0") == -1 {
 			db.SetSetting("UseHTTPS", "true")
 			db.SetSetting("Version", "1.3.0")
 			localversion = "1.3.0"
 		}
 	}
+	log.Println("Software version is up to date:", CurrentVersion)
 }
