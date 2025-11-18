@@ -111,10 +111,25 @@ func main() {
 
 	web.GetRouter(r, absPath)
 
-	log.Println("Starting server on port " + listenPort)
-	err = http.ListenAndServe(":"+listenPort, r)
+	useHTTPS, err := db.GetSetting("UseHTTPS")
 	if err != nil {
-		log.Fatal("Error starting server:", err)
+		log.Fatal("Error retrieving UseHTTPS setting:", err)
+	}
+
+	if useHTTPS == "true" {
+		certPath := filepath.Join(absPath, "cert.pem")
+		keyPath := filepath.Join(absPath, "key.pem")
+		log.Println("Starting HTTPS server on port " + listenPort)
+		err = http.ListenAndServeTLS(":"+listenPort, certPath, keyPath, r)
+		if err != nil {
+			log.Fatal("Error starting HTTPS server:", err)
+		}
+	} else {
+		log.Println("Starting server on port " + listenPort)
+		err = http.ListenAndServe(":"+listenPort, r)
+		if err != nil {
+			log.Fatal("Error starting server:", err)
+		}
 	}
 
 }
