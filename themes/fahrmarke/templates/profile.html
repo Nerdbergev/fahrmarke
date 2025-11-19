@@ -5,13 +5,21 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Mein Profil</title>
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/site.webmanifest">
 </head>
 <body class="wrap">
-  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
     <h1>Mein Profil</h1>
-    <form method="post" action="/logout">
-      <button class="btn">Logout</button>
-    </form>
+    <nav style="display:flex;gap:.5rem;flex-wrap:wrap;">
+      <a href="/" class="btn">← Zur Übersicht</a>
+      <a href="/admin" class="btn">Admin</a>
+      <form method="post" action="/logout">
+        <button class="btn">Logout</button>
+      </form>
+    </nav>
   </header>
 
   <section class="card">
@@ -88,7 +96,5 @@
       </tbody>
     </table>
   </section>
-
-  <p><a href="/">← Zur Übersicht</a></p>
 </body>
 </html>

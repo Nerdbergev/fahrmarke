@@ -35,3 +35,4 @@ cmd/fahrmarke/fahrmarke
 main
 *.pem
 *.key
+*.afdesign~lock~
