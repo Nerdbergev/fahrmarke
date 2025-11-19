@@ -232,4 +232,3 @@ PRs and issues welcome. Open an issue describing improvements or bugs. Keep chan
 ## Disclaimer
 
 Network scanning may have security & privacy implications. Ensure compliance with local policies before deployment.
-

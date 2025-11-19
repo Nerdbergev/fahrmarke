@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=fahrmarke
+AmbientCapabilities=CAP_NET_RAW
 WorkingDirectory=/var/lib/fahrmarke
 ExecStart=/usr/bin/fahrmarke --datapath /var/lib/fahrmarke
 Restart=on-failure
