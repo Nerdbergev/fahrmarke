@@ -33,3 +33,5 @@ go.work.sum
 cmd/fahrmarke/fahrmarke
 *.db
 main
+*.pem
+*.key
