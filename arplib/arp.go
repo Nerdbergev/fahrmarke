@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,7 +46,7 @@ func (s *scanResults) IsUserOnline(userID int) bool {
 }
 
 func HashMAC(mac net.HardwareAddr, salt string) string {
-	hash := salt + mac.String()
+	hash := salt + strings.ToUpper(mac.String())
 	for i := 0; i < hashIterations; i++ {
 		hasher := sha256.New()
 		hasher.Write([]byte(hash))

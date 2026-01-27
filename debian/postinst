@@ -11,7 +11,8 @@ if [ "$1" = "configure" ]; then
     mkdir -p /var/lib/fahrmarke
     chown fahrmarke:fahrmarke /var/lib/fahrmarke
     chmod 755 /var/lib/fahrmarke
-    setcap 'cap_net_raw+ep' /usr/bin/fahrmarke
+    setcap 'cap_net_raw,cap_net_bind_service=+ep' /usr/bin/fahrmarke
+    systemctl daemon-reload
 fi
 
 #DEBHELPER#

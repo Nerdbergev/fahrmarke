@@ -374,7 +374,7 @@ func addDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := uidVal.(int)
 	macStr := r.FormValue("mac")
-	mac, err := net.ParseMAC(strings.ToUpper(strings.TrimSpace(macStr)))
+	mac, err := net.ParseMAC(strings.TrimSpace(macStr))
 	if err != nil {
 		webError(w, "Invalid MAC address", "", http.StatusBadRequest)
 		return
