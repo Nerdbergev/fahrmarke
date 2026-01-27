@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 
@@ -411,12 +412,15 @@ func GetDevicesSparse() ([]Device, error) {
 	if err != nil {
 		return nil, errors.New("Failed to get devices: " + err.Error())
 	}
+	for i := range devices {
+		devices[i].MACAddress = strings.ToUpper(devices[i].MACAddress)
+	}
 	return devices, nil
 }
 
 func AddOrUpdateDevice(userid int, macaddress string, devicename string, salt string) error {
 	var deviceID int
-	err := db.Get(&deviceID, "SELECT ID FROM DEVICES WHERE MACADDRESS = ? AND USER_ID = ?", macaddress, userid)
+	err := db.Get(&deviceID, "SELECT ID FROM DEVICES WHERE MACADDRESS = ? AND USER_ID = ?", strings.ToUpper(macaddress), userid)
 	if err != nil {
 		// Device does not exist, insert new
 		_, err = db.Exec("INSERT INTO DEVICES (USER_ID, MACADDRESS, DEVICENAME, SALT) VALUES (?, ?, ?, ?)", userid, macaddress, devicename, salt)
@@ -434,7 +438,7 @@ func AddOrUpdateDevice(userid int, macaddress string, devicename string, salt st
 }
 
 func DeleteDevice(userid int, macaddress string) error {
-	_, err := db.Exec("DELETE FROM DEVICES WHERE MACADDRESS = ? AND USER_ID = ?", macaddress, userid)
+	_, err := db.Exec("DELETE FROM DEVICES WHERE MACADDRESS = ? AND USER_ID = ?", strings.ToUpper(macaddress), userid)
 	if err != nil {
 		return errors.New("Failed to delete device: " + err.Error())
 	}
