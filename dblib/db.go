@@ -70,7 +70,7 @@ func createSchema() error {
 									)
 									VALUES (
 										'Version',
-										'1.0.0'
+										'1.3.2'
 									);
 
 				INSERT INTO SETTINGS (

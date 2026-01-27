@@ -8,7 +8,7 @@ import (
 	db "github.com/Nerdberg/fahrmarke/dblib"
 )
 
-const CurrentVersion = "1.3.0"
+const CurrentVersion = "1.3.2"
 
 func compareVersions(v1, v2 string) int {
 	v1 = strings.Replace(v1, ".", "", -1)
@@ -40,6 +40,14 @@ func UpdateVersion() {
 			db.SetSetting("UseHTTPS", "true")
 			db.SetSetting("Version", "1.3.0")
 			localversion = "1.3.0"
+		}
+		if compareVersions(localversion, "1.3.0") == 0 {
+			db.SetSetting("Version", "1.3.1")
+			localversion = "1.3.1"
+		}
+		if compareVersions(localversion, "1.3.1") == 0 {
+			db.SetSetting("Version", "1.3.2")
+			localversion = "1.3.2"
 		}
 	}
 	log.Println("Software version is up to date:", CurrentVersion)
