@@ -13,6 +13,7 @@ if [ "$1" = "configure" ]; then
     chmod 755 /var/lib/fahrmarke
     setcap 'cap_net_raw,cap_net_bind_service=+ep' /usr/bin/fahrmarke
     systemctl daemon-reload
+    service fahrmarke restart
 fi
 
 #DEBHELPER#
