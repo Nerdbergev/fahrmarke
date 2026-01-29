@@ -70,7 +70,7 @@ body{background:var(--bg);color:var(--fg);font-size:var(--size)}
 .pegboard{
   --cols:7;
   --rows:6;
-  --cell-h: 110px;
+  --cell-h: 140px;
   display:grid;
   grid-template-columns: repeat(var(--cols), 1fr);
   grid-template-rows: repeat(var(--rows), var(--cell-h));
