@@ -8,7 +8,12 @@
     <link rel="manifest" href="/static/site.webmanifest">
   </head>
   <body class="wrap">
-  <h1>Login</h1>
+    <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+      <h1>Login</h1>
+      <nav style="display:flex;gap:.5rem;flex-wrap:wrap;">
+        <a href="/" class="btn">← Zur Übersicht</a>
+      </nav>
+    </header>
   <form method="post">
     <p><label>Nutzername<br><input name="username" required></label></p>
     <p><label>Passwort<br><input type="password" name="password" required></label></p>
